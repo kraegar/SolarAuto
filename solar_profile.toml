@@ -44,10 +44,10 @@ limb_glow_blend = 0.88
 target_disk_dark = 0.14
 target_disk_mid = 0.49
 target_disk_bright = 0.75
-# 2. Outer limb ring (0.935R..0.992R): maps [p0.5, p50, p99.5] -> [target_ring_dark, target_ring_mid, target_ring_bright]
+# 2. Outer limb ring (0.935R..0.992R): controls the brightness of the rim around the solar limb
 target_ring_dark = 0.22
-target_ring_mid = 0.55
-target_ring_bright = 0.74
+target_ring_mid = 0.51
+target_ring_bright = 0.70
 # 3. Off-limb prominences (1.008R..1.12R): fades smoothly from 0.00 sky to target_prom_bright at p99.2
 target_prom_bright = 0.72
 prominence_gamma = 0.60
@@ -59,5 +59,5 @@ gamma_weight = 0.80
 [color]
 # Target mid-disk orange (solved via smooth channel curves so highlights stay golden, never chalky)
 target_disk_hex = "#E66D00"
-# Subtle warm sky glow (0.0 = pure black sky, 0.04 = subtle dark amber atmosphere like the AstroBin ref)
-sky_warmth = 0.0
+# Deep H-alpha crimson sky background glow (0.0 = pure black sky, 0.14 = subtle dark crimson sky, 0.22 = AstroBin ref)
+sky_warmth = 0.14
