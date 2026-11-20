@@ -1,0 +1,63 @@
+[pipeline]
+output_formats = ["tiff16", "png8"]
+save_grayscale = true
+save_color = true
+generate_preview_grid = false
+
+[geometry]
+auto_center = true
+crop_solar_radii = 1.32
+flip_horizontal = false
+flip_vertical = false
+manual_rotate_deg = 0.0
+
+[calibration]
+# Gentle sky floor subtraction for the disk (keeps off-limb prominences intact via separate scatter extraction)
+sky_clip_sigma = 2.5
+# Evens out etalon sweet-spot gradient across the disk (0.0 to 1.0)
+radial_flat_strength = 0.80
+# Harmonic FNRGF / CNRGF local angular variance equalizer (adapted from SolarFinish / Druckmuller)
+fnrgf_min_gain = 1.40
+fnrgf_max_gain = 2.55
+fnrgf_blend = 0.62
+
+[sharpening]
+# Auto-measures limb sharpness to set PSF; runs Lucy-Richardson deconvolution
+auto_seeing_psf = true
+lr_iterations = 16
+# Multi-scale wavelet detail boost (silky fibrous spicules, never harsh or over-processed)
+fine_detail = 1.28
+medium_detail = 1.24
+
+[tone]
+# Available styles (can also be overridden via CLI --style):
+#   "limb_glow"     = AstroBin 88% partial-inverted disk, golden filaments, dark canopies, glowing limb & proms
+#   "inverted"      = 100% inverted disk (bright gold filaments/fibrils, deep crimson plages, positive proms)
+#   "hybrid"        = 50/50 balanced positive/inverted disk
+#   "natural"       = traditional positive chromosphere (dark filaments, bright plages, positive proms)
+#   "high_contrast" = dramatic positive chromosphere with deeper dark filaments & punchier plages
+style = "limb_glow"
+# Controls how strongly the disk interior inverts relative to the bright limb (0.0 to 1.0, 0.88 = AstroBin ref look)
+limb_glow_blend = 0.88
+# Auto-detected 3-zone stretch targets (darkest, median, brightest percentiles in each zone):
+# 1. Surface disk (r < 0.89R): maps [p0.15, p50, p99.85] -> [target_disk_dark, target_disk_mid, target_disk_bright]
+target_disk_dark = 0.14
+target_disk_mid = 0.49
+target_disk_bright = 0.75
+# 2. Outer limb ring (0.935R..0.992R): maps [p0.5, p50, p99.5] -> [target_ring_dark, target_ring_mid, target_ring_bright]
+target_ring_dark = 0.22
+target_ring_mid = 0.55
+target_ring_bright = 0.74
+# 3. Off-limb prominences (1.008R..1.12R): fades smoothly from 0.00 sky to target_prom_bright at p99.2
+target_prom_bright = 0.72
+prominence_gamma = 0.60
+# Fine global S-curve contrast & midtone gamma adjustment after regional auto-stretch (1.0 = pure auto-stretch)
+contrast = 1.08
+midtone_gamma = 0.98
+gamma_weight = 0.80
+
+[color]
+# Target mid-disk orange (solved via smooth channel curves so highlights stay golden, never chalky)
+target_disk_hex = "#E66D00"
+# Subtle warm sky glow (0.0 = pure black sky, 0.04 = subtle dark amber atmosphere like the AstroBin ref)
+sky_warmth = 0.0

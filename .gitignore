@@ -1,0 +1,23 @@
+# Python environments & caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Raw solar stacks & processed outputs
+output/
+*.tif
+*.tiff
+*.fit
+*.fits
+*.fz
+*.png
+*.jpg
+*.jpeg
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
