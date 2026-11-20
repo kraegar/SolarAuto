@@ -65,6 +65,20 @@ Run `python solar_auto.py -h` to view full help.
 
 ---
 
+## Evaluating AutoStakkert!4 Stacks (`evaluate.py`)
+
+Before processing, you can rank a folder of stacked full-disk `.tif`/`.tiff` files from AutoStakkert!4 to pick the sharpest, lowest-noise capture:
+
+```bash
+python evaluate.py ./raw_stacks
+# Or search subdirectories recursively:
+python evaluate.py ./raw_stacks -r
+```
+
+`evaluate.py` measures interior disk **Focus** (Sobel spatial gradient), **Noise / SNR** (Immerkær variance kernel), **Etalon Contrast** (flattened 5th–95th percentile spread), and **Wind Isotropy** (X/Y gradient balance), printing a ranked table sorted by resolution and composite score.
+
+---
+
 ## Inspiration & Acknowledgements
 
 - **[SolarFinish](https://github.com/galt68/SolarFinish)** by **Greg Alt** — Inspiration for the automated full-disk H-α workflow, Convolutional Normalizing Radial Graded Filter (CNRGF) concept, bimodal gamma brightening, and per-channel power-curve solar colorization.

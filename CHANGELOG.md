@@ -24,3 +24,4 @@ Initial public release of the autonomous 16-bit Hydrogen-Alpha full-disk solar p
 ### CLI & Packaging
 - **Default Profile & `--style` Flag:** Defaults `-p/--profile` to `solar_profile.toml` next to `solar_auto.py`, adds `-s/--style` (`limb_glow`, `inverted`, `hybrid`, `natural`, `natural_disk`, `high_contrast`) with `-h` help, appends `-<style>` to output filenames only when `--style` is specified, and generates the 3×3 preview grid only when `--grid` is passed.
 - **Version & Documentation:** Added `__version__ = "1.0.0"`, `-V/--version` CLI flag, `SolarAuto_Pipeline_Technical_Summary.pdf`, `README.md`, MIT `LICENSE`, `requirements.txt`, and `.gitignore`.
+- **Stack Evaluator (`evaluate.py`):** Included `evaluate.py` (ported to `scipy.ndimage` / `scikit-image` to match `requirements.txt`) to rank AutoStakkert!4 `.tif`/`.tiff` stacks by Sobel focus, Immerkær SNR, etalon contrast, and wind isotropy.
