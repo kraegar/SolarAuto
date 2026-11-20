@@ -3,15 +3,17 @@
 # SPDX-License-Identifier: MIT
 
 """
-solar_auto.py (v4) — Reference-Grade Automated Solar Image Processor
+solar_auto.py — Automated Reference-Grade Solar Image Processor
 Matches top AstroBin / SolarChat workflows:
-  1. Sub-pixel RANSAC limb lock
-  2. Etalon sweet-spot radial flat-fielding (without flattening local texture)
-  3. PSF-calibrated Lucy-Richardson deconvolution + 2-scale fibrous detail enhancement
-  4. True AstroBin "limb_glow" (partially inverted chromosphere + bright golden limb)
-     OR "natural_disk" mode, preserving full internal prominence wisps
-  5. Per-channel incandescent RGB curve solver (rich golden highlights, never chalky peach)
+  1. Sub-pixel 2nd-order harmonic RANSAC limb lock
+  2. Seeing-adaptive unclipped Lucy-Richardson deconvolution
+  3. Non-destructive off-limb prominence extraction (inward-ray-clamped wavelets)
+  4. Etalon sweet-spot radial + 2D flat-fielding & direct-polar Harmonic FNRGF
+  5. 3-zone auto-detected dynamic range stretch with multiple polarity styles
+  6. Per-channel incandescent CIELAB RGB curve solver
 """
+
+__version__ = "1.0.0"
 
 import argparse
 import math
@@ -444,15 +446,15 @@ def apply_harmonic_fnrgf(
     scaled_std = inv_max + std_norm01 * (inv_min - inv_max)
     gain_grid = 1.0 / scaled_std
 
-    # Taper FNRGF enhancement smoothly to 1.0 outside the chromospheric limb (0.996R -> 1.015R)
-    # so off-limb sky noise is never amplified by 1/sigma!
-    limb_taper = 1.0 - np.clip((r_knots[:, None] - 0.995) / 0.015, 0.0, 1.0)
+    # Taper FNRGF enhancement smoothly to 1.0 before the optical limb cliff (0.980R -> 0.995R)
+    # so radial binning never creates a bright overshoot ring at 0.990R!
+    limb_taper = 1.0 - np.clip((r_knots[:, None] - 0.980) / 0.015, 0.0, 1.0)
     gain_grid = 1.0 + blend * limb_taper * (gain_grid - 1.0)
 
     # Also compute the radial ring median so FNRGF/CNRGF pulls azimuthal etalon shading
     # (e.g. off-band dark quadrants near the limb) toward the ring average!
     ring_med = np.median(mu_smooth, axis=1, keepdims=True)
-    az_level_taper = 1.0 - np.clip((r_knots[:, None] - 0.992) / 0.012, 0.0, 1.0)
+    az_level_taper = 1.0 - np.clip((r_knots[:, None] - 0.978) / 0.014, 0.0, 1.0)
     mu_target = mu_smooth + 0.65 * az_level_taper * (ring_med - mu_smooth)
 
     mu_ext = np.column_stack([mu_smooth, mu_smooth[:, 0]])
@@ -784,15 +786,18 @@ def shape_solar_luminance(
     d_min = float(np.percentile(img[r_rel < 0.94], 0.5))
     d_med = float(np.percentile(img[disk_mask], 50.0))
 
-    # Build a smooth radial median baseline across the outer disk & limb ring (0.85R -> 0.998R)
-    # so the outer limb ring signal measures true local spicule/fibril structure rather than radial falloff
-    r_prof_knots = np.linspace(0.84, 0.997, 36, dtype=np.float32)
+    # Build a smooth radial median baseline across the outer disk & limb ring (0.84R -> 0.998R)
+    # with fine spacing near the limb so radial_base tracks the optical roll-off cleanly without a 0.991R spike
+    r_prof_knots = np.concatenate([
+        np.linspace(0.84, 0.96, 19, dtype=np.float32),
+        np.linspace(0.962, 0.998, 19, dtype=np.float32),
+    ])
     r_prof_vals = np.array([
-        float(np.percentile(img[(r_rel >= rk - 0.003) & (r_rel < rk + 0.003)], 50))
-        if np.any((r_rel >= rk - 0.003) & (r_rel < rk + 0.003)) else d_med
+        float(np.percentile(img[(r_rel >= rk - 0.002) & (r_rel < rk + 0.002)], 50))
+        if np.any((r_rel >= rk - 0.002) & (r_rel < rk + 0.002)) else d_med
         for rk in r_prof_knots
     ], dtype=np.float32)
-    r_prof_vals = ndi.gaussian_filter1d(r_prof_vals, sigma=1.2, mode="nearest")
+    r_prof_vals = ndi.gaussian_filter1d(r_prof_vals, sigma=0.9, mode="nearest")
     radial_base = np.interp(r_rel, r_prof_knots, r_prof_vals, left=d_med, right=max(r_prof_vals[-1], 1e-4))
 
     res_s = float(np.clip(r / 680.0, 0.75, 2.0))
@@ -926,13 +931,12 @@ def shape_solar_luminance(
     # Seamless crossfade across the physical limb contour (0.992R -> 0.999R); disk_toned already carries (1 - prom_weight)
     t_prom = np.clip((r_rel - 0.992) / 0.007, 0.0, 1.0)
     prom_weight = t_prom * t_prom * (3.0 - 2.0 * t_prom)
-    if style not in {"limb_glow", "inverted", "hybrid"}:
-        # In positive modes, match prom_toned's limb-crossing brightness to the outer ring (~t_ring_mid)
-        # across 0.992R -> 1.004R so the disk rolls organically into spicules with zero bright rim wire
-        t_relax = np.clip((r_rel - 0.999) / 0.005, 0.0, 1.0)
-        w_relax = t_relax * t_relax * (3.0 - 2.0 * t_relax)
-        prom_at_limb = np.minimum(prom_toned, t_ring_mid * 1.02)
-        prom_toned = (1.0 - w_relax) * prom_at_limb + w_relax * prom_toned
+    # Match prom_toned's limb-crossing brightness to the outer ring (~t_ring_mid) across 0.992R -> 1.004R
+    # so the disk rolls organically into spicules with zero bright rim wire in any style
+    t_relax = np.clip((r_rel - 0.999) / 0.005, 0.0, 1.0)
+    w_relax = t_relax * t_relax * (3.0 - 2.0 * t_relax)
+    prom_at_limb = np.minimum(prom_toned, t_ring_mid * 1.04)
+    prom_toned = (1.0 - w_relax) * prom_at_limb + w_relax * prom_toned
     combined = disk_toned + prom_weight * prom_toned
 
     return np.clip(combined, 0.0, 1.0).astype(np.float32)
@@ -997,8 +1001,10 @@ def colorize_solar_incandescent(
 
     sky_warmth = cfg["color"]["sky_warmth"]
     if sky_warmth > 0.0:
-        rgb[..., 0] = np.clip(rgb[..., 0] + sky_warmth, 0.0, 1.0)
-        rgb[..., 1] = np.clip(rgb[..., 1] + sky_warmth * 0.25, 0.0, 1.0)
+        # Screen-blend a deep H-alpha crimson sky floor (~4.5:1 R:G ratio) so dark sky
+        # lifts to a rich reddish-amber glow without clipping or washing out bright disk highlights
+        rgb[..., 0] = rgb[..., 0] + sky_warmth * (1.0 - rgb[..., 0])
+        rgb[..., 1] = rgb[..., 1] + (sky_warmth * 0.22) * (1.0 - rgb[..., 1])
 
     return np.clip(rgb, 0.0, 1.0).astype(np.float32)
 
@@ -1090,7 +1096,7 @@ def center_and_crop_square(
 
 
 def process_single_file(filepath: Path, out_dir: Path, cfg: dict, style_tag: str | None = None):
-    print(f"[SolarAuto v4] Processing: {filepath.name}")
+    print(f"[SolarAuto v{__version__}] Processing: {filepath.name}")
     img, _ = load_solar_image(filepath)
 
     geom = cfg["geometry"]
@@ -1170,6 +1176,7 @@ def main():
         ),
     )
     parser.add_argument("--grid", action="store_true", help="Also save a 3x3 style & color comparison grid")
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
     with open(args.profile, "rb") as f:
