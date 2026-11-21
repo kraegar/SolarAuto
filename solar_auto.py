@@ -13,7 +13,7 @@ Matches top AstroBin / SolarChat workflows:
   6. Per-channel incandescent CIELAB RGB curve solver
 """
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 
 import argparse
 import math
@@ -499,6 +499,7 @@ def extract_offlimb_prominences(
     harmonics: np.ndarray,
     sky_med: float,
     sky_std: float,
+    sky_suppress: float = 0.90,
 ) -> np.ndarray:
     """
     Extracts full-detail off-limb prominences and the chromospheric spicule fringe from the
@@ -507,8 +508,8 @@ def extract_offlimb_prominences(
          and holds it flat inward so the spicule forest and prominence roots are never eaten away.
       2. Uses inward-ray clamping from 1.010R as the source for 4-scale Gaussian wavelets so the
          bright solar disk never bleeds outward to create a dark/bright limb-cliff halo.
-      3. Applies a soft noise gate so empty sky stays pure black while every feathery prominence
-         hair and internal dark lane is preserved.
+      3. Applies configurable sky scatter suppression with a smooth rational knee (instead of a
+         hard threshold clip) so faint prominence wisps fade organically into the dark sky.
     """
     n_theta = 1440
     n_r = max(128, int(round(r * 1.95)))
@@ -525,9 +526,9 @@ def extract_offlimb_prominences(
     map_y = (cy + rr_grid * np.sin(theta_1d)[:, None]).astype(np.float32)
 
     polar_raw = ndi.map_coordinates(deconv, [map_y, map_x], order=1, mode="nearest")
-    k_bg = (n_theta // 5) | 1
+    k_bg = (n_theta // 12) | 1
     bg_polar = ndi.minimum_filter1d(polar_raw, size=k_bg, axis=0, mode="wrap")
-    bg_polar = ndi.gaussian_filter1d(bg_polar, sigma=k_bg * 0.35, axis=0, mode="wrap")
+    bg_polar = ndi.gaussian_filter1d(bg_polar, sigma=k_bg * 0.45, axis=0, mode="wrap")
     bg_polar = ndi.gaussian_filter1d(bg_polar, sigma=2.5, axis=1, mode="nearest")
 
     ir_sky = min(n_r - 2, max(1, int(round(1.028 / r_max * (n_r - 1)))))
@@ -544,10 +545,13 @@ def extract_offlimb_prominences(
     map_it = (((theta_img + np.pi) / (2.0 * np.pi)) * n_theta) % n_theta
     bg_sky_2d = ndi.map_coordinates(bg_polar, [map_it, map_ir], order=1, mode="wrap")
 
-    base_clean = np.clip(deconv - (bg_sky_2d + 0.95 * sky_std), 0.0, None)
+    suppress = float(np.clip(sky_suppress, 0.0, 1.0))
+    bg_sub_2d = sky_med + suppress * np.maximum(bg_sky_2d - sky_med, 0.0)
+    bg_sub_polar = sky_med + suppress * np.maximum(bg_polar - sky_med, 0.0)
+    base_clean = np.clip(deconv - (bg_sub_2d + 0.85 * suppress * sky_std), 0.0, None)
 
     # Inward-ray clamping from 1.010R for radial-cliff-free 2D prominence wavelets
-    polar_clean = np.clip(polar_raw - (bg_polar + 0.95 * sky_std), 0.0, None)
+    polar_clean = np.clip(polar_raw - (bg_sub_polar + 0.85 * suppress * sky_std), 0.0, None)
     polar_clamped = polar_clean.copy()
     ir_1010 = min(n_r - 4, max(2, int(round(1.010 / r_max * (n_r - 1)))))
     ir_1005 = min(n_r - 2, max(1, int(round(1.005 / r_max * (n_r - 1)))))
@@ -569,15 +573,17 @@ def extract_offlimb_prominences(
     pg70 = ndi.gaussian_filter(wavelet_src, sigma=7.00 * res_s)
     detail_2d = 2.6 * (wavelet_src - pg08) + 1.9 * (pg08 - pg16) + 1.1 * (pg16 - pg34) + 0.5 * (pg34 - pg70)
 
-    prom_gate = np.clip((ndi.gaussian_filter(base_clean, sigma=0.9) - 0.85 * sky_std) / max(1.40 * sky_std, 1e-5), 0.0, 1.0)
-    prom_gate = np.where(r_rel < 1.003, 1.0, prom_gate)
-    prom_gate = prom_gate * (1.0 - np.clip((r_rel - 1.20) / 0.06, 0.0, 1.0))
-    # Suppress 2px sensor/deconvolution edge border so padded preview tiles never show a 1px edge line
-    prom_gate[:2, :] = 0.0
-    prom_gate[-2:, :] = 0.0
-    prom_gate[:, :2] = 0.0
-    prom_gate[:, -2:] = 0.0
-    prom_detailed = np.maximum(base_clean + prom_gate * detail_2d, base_clean * 0.25) * prom_gate
+    # Soft rational knee near sky noise floor so faint prominence wisps taper organically
+    # instead of being abruptly chopped to black
+    knee = max(1.0 * sky_std, 1e-4)
+    prom_soft = base_clean * (base_clean / (base_clean + 0.75 * suppress * knee))
+    prom_weight_det = np.clip(base_clean / max(1.8 * sky_std, 1e-4), 0.0, 1.0)
+    prom_detailed = np.maximum(prom_soft + prom_weight_det * 0.45 * detail_2d, prom_soft * 0.35)
+    prom_detailed = prom_detailed * (1.0 - np.clip((r_rel - 1.42) / 0.10, 0.0, 1.0))
+    prom_detailed[:2, :] = 0.0
+    prom_detailed[-2:, :] = 0.0
+    prom_detailed[:, :2] = 0.0
+    prom_detailed[:, -2:] = 0.0
     return np.clip(prom_detailed, 0.0, None).astype(np.float32)
 
 
@@ -610,7 +616,10 @@ def calibrate_and_sharpen(
             deconv = (skrest.richardson_lucy(deconv / m, psf, num_iter=iters, clip=False) * m).astype(np.float32)
 
     # 2b. Extract full-detail off-limb prominences from unclipped deconvolved image BEFORE disk floor clipping
-    prom_cal = extract_offlimb_prominences(deconv, r_rel, cx, cy, r, harmonics, sky_med, sky_std)
+    sky_suppress = float(cfg["calibration"].get("sky_suppress", 0.90))
+    prom_cal = extract_offlimb_prominences(
+        deconv, r_rel, cx, cy, r, harmonics, sky_med, sky_std, sky_suppress=sky_suppress
+    )
 
     # 3. Disk calibration: subtract sky floor, normalize to disk peak, flat-field & FNRGF
     floor = sky_med + cfg["calibration"]["sky_clip_sigma"] * sky_std
@@ -619,11 +628,26 @@ def calibrate_and_sharpen(
     if disk_peak > 0:
         out /= disk_peak
 
-    # 3. Smooth etalon sweet-spot radial + 2D illumination flat-field inside 0.990R
-    # Leaves a natural 3D chromospheric texture and edge relief inside the limb so the outer ring
-    # retains crisp spicule definition instead of blowing out into a solid bright band!
+    # 3a. Etalon flat-fielding: either Jacquinot-only 2D asymmetric correction (preserving natural
+    # spherical limb darkening) or full radial+2D flattening when preserve_limb_darkening is false.
+    preserve_ld = bool(cfg["calibration"].get("preserve_limb_darkening", True))
     flat_strength = cfg["calibration"]["radial_flat_strength"]
-    if flat_strength > 0.0:
+    if preserve_ld:
+        r_knots = np.linspace(0.0, 0.99, 60, dtype=np.float32)
+        d_fallback = float(np.median(out[r_rel < 0.85]))
+        r_prof = np.array([
+            float(np.median(out[(r_rel >= rk - 0.01) & (r_rel < rk + 0.01)]))
+            if np.any((r_rel >= rk - 0.01) & (r_rel < rk + 0.01)) else d_fallback
+            for rk in r_knots
+        ], dtype=np.float32)
+        r_prof = ndi.gaussian_filter1d(r_prof, sigma=1.5, mode="nearest")
+        i_sym = np.interp(r_rel, r_knots, r_prof, left=r_prof[0], right=r_prof[-1])
+        ratio_raw = np.where(r_rel < 0.95, np.clip(out / np.maximum(i_sym, 1e-4), 0.80, 1.20), 1.0)
+        jacq_2d = ndi.gaussian_filter(ratio_raw, sigma=max(r * 0.16, 85.0))
+        t_2d = np.clip((r_rel - 0.92) / 0.06, 0.0, 1.0)
+        w_2d = (1.0 - t_2d * t_2d * (3.0 - 2.0 * t_2d)) * 0.85
+        out = out / (1.0 + w_2d * (jacq_2d - 1.0))
+    elif flat_strength > 0.0:
         num_bins = 140
         r_edges = np.linspace(0, 0.990, num_bins + 1)
         r_centers = 0.5 * (r_edges[:-1] + r_edges[1:])
@@ -656,6 +680,9 @@ def calibrate_and_sharpen(
     fnrgf_min = cfg["calibration"].get("fnrgf_min_gain", 1.35)
     fnrgf_max = cfg["calibration"].get("fnrgf_max_gain", 2.40)
     fnrgf_blend = cfg["calibration"].get("fnrgf_blend", 0.55)
+    style = cfg["tone"].get("style", "limb_glow")
+    if preserve_ld and style in {"natural", "natural_disk", "high_contrast"}:
+        fnrgf_blend = 0.0
     if fnrgf_blend > 0.0:
         out = apply_harmonic_fnrgf(out, r_rel, cx, cy, min_gain=fnrgf_min, max_gain=fnrgf_max, blend=fnrgf_blend)
 
@@ -781,7 +808,10 @@ def shape_solar_luminance(
 
     t_prom_bright = cfg["tone"].get("target_prom_bright", 0.64)
 
-    disk_mask = r_rel < 0.89
+    preserve_ld = bool(cfg["calibration"].get("preserve_limb_darkening", True))
+    spherical_natural = preserve_ld and style in {"natural", "natural_disk", "high_contrast"}
+
+    disk_mask = r_rel < (0.97 if spherical_natural else 0.89)
     ring_mask = (r_rel >= 0.935) & (r_rel <= 0.992)
     d_min = float(np.percentile(img[r_rel < 0.94], 0.5))
     d_med = float(np.percentile(img[disk_mask], 50.0))
@@ -839,7 +869,13 @@ def shape_solar_luminance(
         t_ring_mid = min(t_ring_mid, 0.39)
         t_ring_bright = min(t_ring_bright, 0.64)
         u_disk = img / max(d_med, 1e-4)
-        raw_disk_signal = u_disk * (1.0 - 0.04 * (np.clip(r_rel, 0.0, 1.0) ** 2.0))
+        if spherical_natural:
+            raw_disk_signal = u_disk
+            t_disk_dark = max(t_disk_dark, 0.22)
+            t_disk_mid = max(t_disk_mid, 0.53)
+            t_disk_bright = max(t_disk_bright, 0.82)
+        else:
+            raw_disk_signal = u_disk * (1.0 - 0.04 * (np.clip(r_rel, 0.0, 1.0) ** 2.0))
         u_ring = img / np.maximum(radial_base, 1e-4)
         ring_hf = u_ring - ndi.gaussian_filter(u_ring, sigma=1.6 * res_s)
         raw_ring_signal = u_ring * (1.0 - 0.06 * np.clip((r_rel - 0.88) / 0.12, 0.0, 1.0)) + 0.30 * ring_hf
@@ -854,8 +890,8 @@ def shape_solar_luminance(
         target_dark=t_disk_dark,
         target_mid=t_disk_mid,
         target_bright=t_disk_bright,
-        min_floor=0.05,
-        max_ceil=0.86,
+        min_floor=0.12 if spherical_natural else 0.05,
+        max_ceil=0.90 if spherical_natural else 0.86,
         gamma_dark=0.92,
         gamma_bright=0.82,
     )
@@ -877,7 +913,10 @@ def shape_solar_luminance(
     )
 
     # Smooth C^2 Hermite handoff from inner disk stretch to outer limb ring stretch
-    if style in {"limb_glow", "inverted", "hybrid"}:
+    if spherical_natural:
+        # Preserve the natural 3D sphere: one unified monotonic tone curve all the way to the limb
+        disk_toned = disk_stretched
+    elif style in {"limb_glow", "inverted", "hybrid"}:
         t_ring = np.clip((r_rel - 0.88) / 0.075, 0.0, 1.0)
         w_ring = t_ring * t_ring * (3.0 - 2.0 * t_ring)
         disk_toned = (1.0 - w_ring) * disk_stretched + w_ring * ring_stretched
@@ -889,7 +928,13 @@ def shape_solar_luminance(
         disk_toned = (1.0 - w_ring) * disk_stretched + w_ring * ring_nat
 
     # Taper disk_toned smoothly before the 0.998R limb cliff so inverted ring mapping never spikes into a bright wire
-    outer_feather = 1.0 - np.clip((r_rel - 0.992) / 0.007, 0.0, 1.0)
+    if spherical_natural:
+        limb_edge_mask = (r_rel >= 0.988) & (r_rel <= 0.995)
+        limb_edge_val = float(np.median(disk_toned[limb_edge_mask])) if np.any(limb_edge_mask) else 0.16
+        outer_feather = 1.0 - np.clip((r_rel - 0.996) / 0.006, 0.0, 1.0)
+    else:
+        limb_edge_val = t_ring_mid
+        outer_feather = 1.0 - np.clip((r_rel - 0.992) / 0.007, 0.0, 1.0)
     outer_feather = outer_feather * outer_feather * (3.0 - 2.0 * outer_feather)
     disk_toned = disk_toned * outer_feather
 
@@ -935,15 +980,22 @@ def shape_solar_luminance(
             f"Prom [dark={p_pdark:.4f}, mid={p_pmid:.4f}, bright={p_pbright:.4f}] -> [0.00, {t_prom_bright:.2f}]"
         )
 
-    # Seamless crossfade across the physical limb contour (0.992R -> 0.999R); disk_toned already carries (1 - prom_weight)
-    t_prom = np.clip((r_rel - 0.992) / 0.007, 0.0, 1.0)
-    prom_weight = t_prom * t_prom * (3.0 - 2.0 * t_prom)
-    # Match prom_toned's limb-crossing brightness to the outer ring (~t_ring_mid) across 0.992R -> 1.004R
-    # so the disk rolls organically into spicules with zero bright rim wire in any style
-    t_relax = np.clip((r_rel - 0.999) / 0.005, 0.0, 1.0)
-    w_relax = t_relax * t_relax * (3.0 - 2.0 * t_relax)
-    prom_at_limb = np.minimum(prom_toned, t_ring_mid * 1.04)
-    prom_toned = (1.0 - w_relax) * prom_at_limb + w_relax * prom_toned
+    # Seamless crossfade across the physical limb contour; disk_toned already carries outer_feather
+    if spherical_natural:
+        prom_weight = 1.0 - outer_feather
+        t_relax = np.clip((r_rel - 1.007) / 0.007, 0.0, 1.0)
+        w_relax = t_relax * t_relax * (3.0 - 2.0 * t_relax)
+        prom_at_limb = np.minimum(prom_toned, limb_edge_val * 0.90)
+        prom_toned = (1.0 - w_relax) * prom_at_limb + w_relax * prom_toned
+    else:
+        t_prom = np.clip((r_rel - 0.992) / 0.007, 0.0, 1.0)
+        prom_weight = t_prom * t_prom * (3.0 - 2.0 * t_prom)
+        # Match prom_toned's limb-crossing brightness to the outer ring (~t_ring_mid) across 0.992R -> 1.004R
+        # so the disk rolls organically into spicules with zero bright rim wire in any style
+        t_relax = np.clip((r_rel - 0.999) / 0.005, 0.0, 1.0)
+        w_relax = t_relax * t_relax * (3.0 - 2.0 * t_relax)
+        prom_at_limb = np.minimum(prom_toned, t_ring_mid * 1.04)
+        prom_toned = (1.0 - w_relax) * prom_at_limb + w_relax * prom_toned
     combined = disk_toned + prom_weight * prom_toned
 
     return np.clip(combined, 0.0, 1.0).astype(np.float32)

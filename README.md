@@ -12,9 +12,9 @@ For a deep-dive technical explanation of the algorithms and math behind each sta
 
 - **2nd-Order Harmonic Limb Lock:** Sub-pixel RANSAC + Fourier harmonic contour fit locks $r_{\text{rel}} = 1.000$ around all $360^\circ$, handling atmospheric refraction and optical tilt.
 - **Seeing-Adaptive Unclipped Deconvolution:** Estimates the optical seeing PSF from the limb profile (removing intrinsic spicule-skirt width in quadrature) and runs Lucy-Richardson deconvolution without clipping the sky pedestal.
-- **Inward-Ray-Clamped Prominence Wavelets:** Separates smooth polar atmospheric scatter and applies 4-scale wavelets without bright-disk bleed, preserving fine vertical prominence hairs and dark cavities against a pure black sky.
-- **Direct-Polar Harmonic FNRGF:** Equalizes off-center etalon sweet-spot gradients and local chromospheric micro-contrast along constant-$r_{\text{rel}}$ shells.
-- **3-Zone Auto-Stretch:** Automatically detects darkest, median, and brightest percentiles independently across the inner disk, outer limb ring, and off-limb prominences.
+- **Inward-Ray-Clamped Prominence Wavelets:** Separates smooth polar atmospheric scatter (`sky_suppress`) with a soft rational knee instead of hard clipping, applying 4-scale wavelets without bright-disk bleed so faint prominence wisps taper naturally into the sky.
+- **Jacquinot-Only Flat-Fielding & Harmonic FNRGF:** By default (`preserve_limb_darkening = true`), compensates only asymmetric 2D etalon/Jacquinot non-uniformity while preserving natural spherical limb darkening; `limb_glow`, `inverted`, and `hybrid` styles also apply direct-polar Harmonic FNRGF contrast equalization.
+- **Adaptive Tone Shaping & Limb Handoff:** Uses a unified monotonic spherical curve in `natural` styles (or 3-zone inner disk / outer ring / off-limb prominence stretching in `limb_glow` / `inverted`) with a limb-matched prominence crossfade.
 - **Incandescent Per-Channel Color Solver:** Optimizes $(R^{g_R}, G^{g_G}, B^{g_B})$ in CIELAB space anchored to `target_disk_hex` (`#E66D00` by default).
 
 ---

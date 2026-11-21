@@ -5,6 +5,16 @@ Versioning follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATC
 
 ---
 
+## [1.1.0] — 2026-11-21
+
+### Changed
+- **Jacquinot-Only 2D Flat-Fielding (`preserve_limb_darkening = true`):** Separates radially symmetric solar limb darkening $I_{\text{sym}}(r_{\text{rel}})$ from 2D asymmetric etalon/Jacquinot non-uniformity $I_{\text{2D}} / I_{\text{sym}}$, removing off-center sweet-spot shading while preserving the natural 3D spherical appearance of the Sun.
+- **Unified Spherical Tone Curve in Positive Styles (`natural`, `natural_disk`, `high_contrast`):** When `preserve_limb_darkening = true`, skips FNRGF disk variance-flattening (`fnrgf_blend = 0.0`) and uses a single unified monotonic tone curve across the disk (`r < 0.97R`) with a limb-matched prominence handoff (`1.007R -> 1.014R`) to eliminate bright limb wires and dark rim trenches.
+- **Soft, Configurable Off-Limb Sky Suppression (`sky_suppress = 1.0`):** Replaced the hard `prom_gate` background threshold clip with a `30°` polar scatter baseline and a smooth rational knee (`base_clean / (base_clean + 0.75 * suppress * knee)`) so faint prominence wisps taper organically without abrupt black cutouts.
+- **Subtler Default Sharpening (`solar_profile.toml`):** Reduced default `lr_iterations` (`8` → `6`), `fine_detail` (`1.07` → `1.05`), and `medium_detail` (`1.06` → `1.04`) for a cleaner, less over-processed optical look.
+
+---
+
 ## [1.0.2] — 2026-11-20
 
 ### Changed
