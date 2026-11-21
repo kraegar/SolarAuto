@@ -14,9 +14,13 @@ manual_rotate_deg = 0.0
 [calibration]
 # Gentle sky floor subtraction for the disk (keeps off-limb prominences intact via separate scatter extraction)
 sky_clip_sigma = 2.5
-# Evens out etalon sweet-spot gradient across the disk (0.0 to 1.0)
+# Off-limb atmospheric scatter suppression (0.0 = raw sky scatter, 1.0 = full scatter removal with soft prominence knee)
+sky_suppress = 1.0
+# Preserve natural radial limb darkening (3D sphere) and correct only asymmetric Jacquinot/etalon non-uniformity
+preserve_limb_darkening = true
+# Used only when preserve_limb_darkening = false (0.0 to 1.0)
 radial_flat_strength = 0.80
-# Harmonic FNRGF / CNRGF local angular variance equalizer (adapted from SolarFinish / Druckmuller)
+# Harmonic FNRGF / CNRGF local angular variance equalizer (used in limb_glow/inverted/hybrid styles)
 fnrgf_min_gain = 1.40
 fnrgf_max_gain = 1.85
 fnrgf_blend = 0.40
@@ -24,10 +28,10 @@ fnrgf_blend = 0.40
 [sharpening]
 # Auto-measures limb sharpness to set PSF; runs Lucy-Richardson deconvolution
 auto_seeing_psf = true
-lr_iterations = 8
-# Multi-scale wavelet detail boost (silky fibrous spicules, never harsh or over-processed)
-fine_detail = 1.07
-medium_detail = 1.06
+lr_iterations = 6
+# Subtle multi-scale wavelet detail boost ("less is more")
+fine_detail = 1.05
+medium_detail = 1.04
 
 [tone]
 # Available styles (can also be overridden via CLI --style):
