@@ -18,16 +18,16 @@ sky_clip_sigma = 2.5
 radial_flat_strength = 0.80
 # Harmonic FNRGF / CNRGF local angular variance equalizer (adapted from SolarFinish / Druckmuller)
 fnrgf_min_gain = 1.40
-fnrgf_max_gain = 2.55
-fnrgf_blend = 0.62
+fnrgf_max_gain = 1.85
+fnrgf_blend = 0.40
 
 [sharpening]
 # Auto-measures limb sharpness to set PSF; runs Lucy-Richardson deconvolution
 auto_seeing_psf = true
-lr_iterations = 16
+lr_iterations = 8
 # Multi-scale wavelet detail boost (silky fibrous spicules, never harsh or over-processed)
-fine_detail = 1.28
-medium_detail = 1.24
+fine_detail = 1.07
+medium_detail = 1.06
 
 [tone]
 # Available styles (can also be overridden via CLI --style):
