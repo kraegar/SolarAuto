@@ -5,6 +5,13 @@ Versioning follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATC
 
 ---
 
+## [1.0.2] — 2026-11-20
+
+### Changed
+- **Refined Default Sharpening & FNRGF Balance (`solar_profile.toml`):** Dialed back stacked sharpening/contrast amplification (`lr_iterations`: `16` → `8`, `fine_detail`: `1.28` → `1.07`, `medium_detail`: `1.24` → `1.06`, `fnrgf_max_gain`: `2.55` → `1.85`, `fnrgf_blend`: `0.62` → `0.40`) to eliminate pixel-scale oversharpening grit (`lap/sob` `0.125` → `0.105`) and lift inner-disk SNR (`55.65` → `92.17`).
+
+---
+
 ## [1.0.1] — 2026-11-20
 
 ### Fixed

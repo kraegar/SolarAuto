@@ -13,7 +13,7 @@ Matches top AstroBin / SolarChat workflows:
   6. Per-channel incandescent CIELAB RGB curve solver
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 import argparse
 import math
