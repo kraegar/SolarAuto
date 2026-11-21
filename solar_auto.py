@@ -13,7 +13,7 @@ Matches top AstroBin / SolarChat workflows:
   6. Per-channel incandescent CIELAB RGB curve solver
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import argparse
 import math
@@ -835,14 +835,14 @@ def shape_solar_luminance(
             contrast = max(contrast, 1.30)
             t_disk_dark = min(t_disk_dark, 0.10)
             t_disk_bright = max(t_disk_bright, 0.80)
-        t_ring_dark = min(t_ring_dark, 0.16)
-        t_ring_mid = min(t_ring_mid, 0.44)
-        t_ring_bright = min(t_ring_bright, 0.68)
+        t_ring_dark = min(t_ring_dark, 0.12)
+        t_ring_mid = min(t_ring_mid, 0.39)
+        t_ring_bright = min(t_ring_bright, 0.64)
         u_disk = img / max(d_med, 1e-4)
-        raw_disk_signal = u_disk * (1.0 - 0.14 * (np.clip(r_rel, 0.0, 1.0) ** 2.0))
+        raw_disk_signal = u_disk * (1.0 - 0.04 * (np.clip(r_rel, 0.0, 1.0) ** 2.0))
         u_ring = img / np.maximum(radial_base, 1e-4)
         ring_hf = u_ring - ndi.gaussian_filter(u_ring, sigma=1.6 * res_s)
-        raw_ring_signal = u_ring * (1.0 - 0.04 * np.clip((r_rel - 0.88) / 0.11, 0.0, 1.0)) + 0.30 * ring_hf
+        raw_ring_signal = u_ring * (1.0 - 0.06 * np.clip((r_rel - 0.88) / 0.12, 0.0, 1.0)) + 0.30 * ring_hf
 
     # ZONE 1: Auto-detect darkest, median, and brightest surface pixels and stretch smoothly
     disk_stretched, (d_pdark, d_pmid, d_pbright) = auto_stretch_zone(
@@ -876,10 +876,17 @@ def shape_solar_luminance(
         gamma_bright=0.90,
     )
 
-    # Smooth C^2 Hermite handoff from inner disk stretch to outer limb ring stretch across 0.88R -> 0.955R
-    t_ring = np.clip((r_rel - 0.88) / 0.075, 0.0, 1.0)
-    w_ring = t_ring * t_ring * (3.0 - 2.0 * t_ring)
-    disk_toned = (1.0 - w_ring) * disk_stretched + w_ring * ring_stretched
+    # Smooth C^2 Hermite handoff from inner disk stretch to outer limb ring stretch
+    if style in {"limb_glow", "inverted", "hybrid"}:
+        t_ring = np.clip((r_rel - 0.88) / 0.075, 0.0, 1.0)
+        w_ring = t_ring * t_ring * (3.0 - 2.0 * t_ring)
+        disk_toned = (1.0 - w_ring) * disk_stretched + w_ring * ring_stretched
+    else:
+        # Wider, gentler handoff (0.82R -> 0.96R) + monotonic outer roll-off so natural disks have no dark ring
+        t_ring = np.clip((r_rel - 0.82) / 0.14, 0.0, 1.0)
+        w_ring = t_ring * t_ring * (3.0 - 2.0 * t_ring)
+        ring_nat = ring_stretched * (1.0 - 0.12 * np.clip((r_rel - 0.88) / 0.12, 0.0, 1.0))
+        disk_toned = (1.0 - w_ring) * disk_stretched + w_ring * ring_nat
 
     # Taper disk_toned smoothly before the 0.998R limb cliff so inverted ring mapping never spikes into a bright wire
     outer_feather = 1.0 - np.clip((r_rel - 0.992) / 0.007, 0.0, 1.0)

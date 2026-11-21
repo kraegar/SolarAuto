@@ -5,6 +5,13 @@ Versioning follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATC
 
 ---
 
+## [1.0.1] — 2026-11-20
+
+### Fixed
+- **Smooth Center-to-Limb Transition in Natural Styles (`shape_solar_luminance`):** Removed the dark ring around `0.85R–0.90R` in `natural`, `natural_disk`, and `high_contrast` modes by reducing the artificial `r_rel^2` edge darkening (`0.14` → `0.04`), lowering `target_ring_mid` (`0.44` → `0.39`) with a gentle outer taper, and widening the `disk_stretched` → `ring_nat` blend across `0.82R → 0.96R` for monotonic center-to-limb darkening.
+
+---
+
 ## [1.0.0] — 2026-11-20
 
 Initial public release of the autonomous 16-bit Hydrogen-Alpha full-disk solar processor.
